@@ -16,11 +16,11 @@ import {
 } from "./protocol.js";
 import { buildCodexLifecycleTerminalMeta } from "./run-attempt-lifecycle-terminal.js";
 import { emitCodexAppServerEvent } from "./run-attempt-lifecycle.js";
-import type { CodexAttemptResources } from "./run-attempt-resources.js";
+import type { StartedCodexAttemptResources } from "./run-attempt-start.js";
 import type { CodexAttemptTurnState } from "./run-attempt-turn-state.js";
 
 export function createCodexAttemptLifecycleController(
-  resources: CodexAttemptResources,
+  resources: StartedCodexAttemptResources,
   turnRuntime: CodexAttemptTurnState,
 ) {
   const { prompt, trajectoryRecorder } = resources;
@@ -140,7 +140,11 @@ export function createCodexAttemptLifecycleController(
       // Interrupt drops accepted pending input. Reject unconsumed steering first so
       // completion delivery can use its fallback path instead of reporting success.
       turnRuntime.steeringQueueRef.current?.cancel();
-      void turnRuntime.interruptTurn(value.call.turnId, { locallyCompleted: true });
+      // Foreground yield may complete immediately, but subscription transfer must
+      // join the exact native turn's stop before another parent turn can start.
+      state.abortCleanup = turnRuntime
+        .interruptTurn(value.call.turnId, { locallyCompleted: true })
+        .then(() => {});
       turnRuntime.completeTurn();
     });
     immediate.unref?.();
